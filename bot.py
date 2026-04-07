@@ -10,7 +10,7 @@ DATA_FILE = "data.json"
 
 # IDs de Discord de los usuarios con permisos de admin
 WHITELIST = [
-    123456789012345678,  # <-- Reemplaza con tu ID de Discord
+    786993411605135411,  # <-- Reemplaza con tu ID de Discord
     # 987654321098765432,  # Agrega más IDs aquí
 ]
 
