@@ -11,7 +11,7 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 DATA_FILE = "data.json"
 
 WHITELIST = [
-    123456789012345678,  # <-- Tu ID de Discord
+    786993411605135411,  # <-- Tu ID de Discord
 ]
 
 DEFAULT_DATA = {
