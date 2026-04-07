@@ -105,11 +105,11 @@ async def ulucerebro(ctx, *, pregunta: str = None):
                 max_tokens=512,
                 temperature=0.7,
             )
-            texto = respuesta.choices[0].message.content.strip()
+            texto ="ulu dice:",respuesta.choices[0].message.content.strip()
 
             # Discord tiene límite de 2000 caracteres por mensaje
             if len(texto) > 1900:
-                texto = texto[:1900] + "...\n*(respuesta recortada)*"
+                texto ="ulu:",texto[:1900] + "...\n*(respuesta recortada)*"
 
             await ctx.reply(texto)
 
