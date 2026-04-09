@@ -1,14 +1,17 @@
 import os
 import json
 import random
+import asyncio
+import io
+import aiohttp
 import discord
 from discord.ext import commands
 from groq import Groq
 
 # ─── Config ───────────────────────────────────────────────────────────────────
-TOKEN = os.environ.get("DISCORD_TOKEN", "")
+TOKEN        = os.environ.get("DISCORD_TOKEN", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-DATA_FILE = "data.json"
+DATA_FILE    = "data.json"
 
 WHITELIST = [
     786993411605135411,  # <-- Tu ID de Discord
@@ -16,14 +19,27 @@ WHITELIST = [
 
 DEFAULT_DATA = {
     "triggers": {
-        "hola": ["que tal", "no", "a bueno"],
+        "hola":    ["que tal", "no", "a bueno"],
         "gracias": ["de nada", "claro", "np"],
-        "adios": ["bye", "hasta luego", "chao"],
+        "adios":   ["bye", "hasta luego", "chao"],
     }
 }
 
 # ─── Groq client ──────────────────────────────────────────────────────────────
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
+# ─── Pollinations helper ──────────────────────────────────────────────────────
+async def generar_imagen(descripcion: str) -> bytes:
+    seed = random.randint(1, 999999)
+    prompt_encoded = descripcion.replace(" ", "%20")
+    url = (
+        f"https://image.pollinations.ai/prompt/{prompt_encoded}"
+        f"?width=1024&height=1024&nologo=true&seed={seed}"
+    )
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+            resp.raise_for_status()
+            return await resp.read()
 
 # ─── Carga / guarda JSON ──────────────────────────────────────────────────────
 def load_data():
@@ -52,6 +68,8 @@ def is_whitelisted(user_id: int) -> bool:
 async def on_ready():
     print(f"[OK] Bot conectado como {bot.user}")
     print(f"[OK] Groq: {'activo' if groq_client else 'sin API key'}")
+    print(f"[OK] Modelo texto: llama-3.3-70b-versatile")
+    print(f"[OK] Imágenes: Pollinations.AI (gratis, sin key)")
     print(f"[OK] Triggers: {list(load_data()['triggers'].keys())}")
 
 @bot.event
@@ -62,11 +80,11 @@ async def on_message(message):
     if message.content.startswith("!"):
         return
 
-    data = load_data()
-    content_lower = message.content.lower()
+    data        = load_data()
+    content_low = message.content.lower()
 
     for trigger, responses in data["triggers"].items():
-        if trigger.lower() in content_lower:
+        if trigger.lower() in content_low:
             if random.random() < 0.33:
                 await message.reply(random.choice(responses))
             break
@@ -75,7 +93,7 @@ async def on_message(message):
 @bot.command(name="Ulucerebro")
 async def ulucerebro(ctx, *, pregunta: str = None):
     """
-    Responde cualquier pregunta usando IA de Groq.
+    Responde cualquier pregunta usando Groq (llama-3.3-70b-versatile).
     Uso: !Ulucerebro que es un agujero negro?
     """
     if not pregunta:
@@ -83,46 +101,72 @@ async def ulucerebro(ctx, *, pregunta: str = None):
         return
 
     if not groq_client:
-        await ctx.send("La IA no está configurada. Falta la variable `GROQ_API_KEY` en Railway.")
+        await ctx.send("La IA no está configurada. Falta la variable `GROQ_API_KEY`.")
         return
 
     async with ctx.typing():
         try:
-            respuesta = groq_client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "Eres Ulucerebro, un asistente inteligente y directo dentro de un servidor de Discord. "
-                            "Responde siempre en español, de forma clara y concisa. "
-                            "No uses listas largas ni respuestas muy extensas a menos que sea necesario. "
-                            "Adapta tu tono al contexto: casual si la pregunta es informal, preciso si es técnica."
-                        ),
-                    },
-                    {"role": "user", "content": pregunta},
-                ],
-                max_tokens=512,
-                temperature=0.7,
+            loop = asyncio.get_event_loop()
+            respuesta = await loop.run_in_executor(
+                None,
+                lambda: groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Eres Ulucerebro, un asistente inteligente y directo dentro de un servidor de Discord. "
+                                "Responde siempre en español, de forma clara y concisa. "
+                                "No uses listas largas ni respuestas muy extensas a menos que sea necesario. "
+                                "Adapta tu tono al contexto: casual si la pregunta es informal, preciso si es técnica."
+                            ),
+                        },
+                        {"role": "user", "content": pregunta},
+                    ],
+                    max_tokens=512,
+                    temperature=0.7,
+                ),
             )
-            texto ="ulu dice:",respuesta.choices[0].message.content.strip()
+            texto = f"ulu dice: {respuesta.choices[0].message.content.strip()}"
 
-            # Discord tiene límite de 2000 caracteres por mensaje
             if len(texto) > 1900:
-                texto ="ulu:",texto[:1900] + "...\n*(respuesta recortada)*"
+                texto = texto[:1900] + "...\n*(respuesta recortada)*"
 
             await ctx.reply(texto)
 
         except Exception as e:
             await ctx.send(f"Error al conectar con la IA: `{e}`")
 
+# ─── Comando !uluimg ──────────────────────────────────────────────────────────
+@bot.command(name="uluimg")
+async def uluimg(ctx, *, descripcion: str = None):
+    """
+    Genera una imagen con IA a partir de una descripción (Pollinations.AI).
+    Uso: !uluimg un gato astronauta en la luna
+    """
+    if not descripcion:
+        await ctx.send("Dime qué imagen quieres. Ej: `!uluimg un dragón en el espacio`")
+        return
+
+    async with ctx.typing():
+        try:
+            imagen_bytes = await generar_imagen(descripcion)
+            archivo = discord.File(
+                fp=io.BytesIO(imagen_bytes),
+                filename="uluimg.png",
+            )
+            await ctx.reply(f'🎨 **"{descripcion}"**', file=archivo)
+
+        except asyncio.TimeoutError:
+            await ctx.send("La generación tardó demasiado, intenta de nuevo.")
+        except Exception as e:
+            await ctx.send(f"Error generando la imagen: `{e}`")
 
 # ─── Comandos de gestión (solo whitelist) ─────────────────────────────────────
 @bot.command(name="addtrigger")
 async def add_trigger(ctx, trigger: str, *, respuesta: str):
-    if not is_whitelisted(ctx.author.id):
-        await ctx.send("No tienes permiso."); return
-    data = load_data()
+    if not is_whitelisted(ctx.author.id): await ctx.send("No tienes permiso."); return
+    data    = load_data()
     trigger = trigger.lower()
     if trigger in data["triggers"]:
         await ctx.send(f"`{trigger}` ya existe. Usa `!addreply` para agregar respuestas."); return
@@ -132,9 +176,8 @@ async def add_trigger(ctx, trigger: str, *, respuesta: str):
 
 @bot.command(name="addreply")
 async def add_reply(ctx, trigger: str, *, respuesta: str):
-    if not is_whitelisted(ctx.author.id):
-        await ctx.send("No tienes permiso."); return
-    data = load_data()
+    if not is_whitelisted(ctx.author.id): await ctx.send("No tienes permiso."); return
+    data    = load_data()
     trigger = trigger.lower()
     if trigger not in data["triggers"]:
         await ctx.send(f"`{trigger}` no existe. Usa `!addtrigger` primero."); return
@@ -144,9 +187,8 @@ async def add_reply(ctx, trigger: str, *, respuesta: str):
 
 @bot.command(name="delreply")
 async def del_reply(ctx, trigger: str, indice: int):
-    if not is_whitelisted(ctx.author.id):
-        await ctx.send("No tienes permiso."); return
-    data = load_data()
+    if not is_whitelisted(ctx.author.id): await ctx.send("No tienes permiso."); return
+    data    = load_data()
     trigger = trigger.lower()
     if trigger not in data["triggers"]:
         await ctx.send(f"`{trigger}` no existe."); return
@@ -159,9 +201,8 @@ async def del_reply(ctx, trigger: str, indice: int):
 
 @bot.command(name="deltrigger")
 async def del_trigger(ctx, trigger: str):
-    if not is_whitelisted(ctx.author.id):
-        await ctx.send("No tienes permiso."); return
-    data = load_data()
+    if not is_whitelisted(ctx.author.id): await ctx.send("No tienes permiso."); return
+    data    = load_data()
     trigger = trigger.lower()
     if trigger not in data["triggers"]:
         await ctx.send(f"`{trigger}` no existe."); return
@@ -171,8 +212,7 @@ async def del_trigger(ctx, trigger: str):
 
 @bot.command(name="listtriggers")
 async def list_triggers(ctx):
-    if not is_whitelisted(ctx.author.id):
-        await ctx.send("No tienes permiso."); return
+    if not is_whitelisted(ctx.author.id): await ctx.send("No tienes permiso."); return
     data = load_data()
     if not data["triggers"]:
         await ctx.send("No hay triggers."); return
@@ -186,10 +226,10 @@ async def list_triggers(ctx):
 
 @bot.command(name="bothelp")
 async def bot_help(ctx):
-    if not is_whitelisted(ctx.author.id):
-        await ctx.send("No tienes permiso."); return
+    if not is_whitelisted(ctx.author.id): await ctx.send("No tienes permiso."); return
     await ctx.send("""**Comandos:**
-`!Ulucerebro <pregunta>` — Pregúntale a la IA
+`!Ulucerebro <pregunta>` — Pregúntale a la IA (llama-3.3-70b)
+`!uluimg <descripción>` — Genera una imagen con IA
 `!addtrigger <palabra> <respuesta>` — Crea trigger
 `!addreply <palabra> <respuesta>` — Agrega respuesta
 `!delreply <palabra> <número>` — Elimina respuesta
