@@ -224,12 +224,28 @@ async def list_triggers(ctx):
         lines.append("")
     await ctx.send("\n".join(lines))
 
+@bot.command(name="purge")
+async def purge_messages(ctx, cantidad: int):
+    if not is_whitelisted(ctx.author.id): await ctx.send("No tienes permiso."); return
+    if cantidad <= 0:
+        await ctx.send("Por favor, ingresa una cantidad mayor a 0."); return
+    try:
+        deleted = await ctx.channel.purge(limit=cantidad + 1)
+        msg = await ctx.send(f"✅ Se han borrado {len(deleted) - 1} mensajes.")
+        await asyncio.sleep(3)
+        await msg.delete()
+    except discord.Forbidden:
+        await ctx.send("No tengo permisos para borrar mensajes en este canal.")
+    except discord.HTTPException as e:
+        await ctx.send(f"Ocurrió un error al intentar borrar mensajes: `{e}`")
+
 @bot.command(name="bothelp")
 async def bot_help(ctx):
     if not is_whitelisted(ctx.author.id): await ctx.send("No tienes permiso."); return
     await ctx.send("""**Comandos:**
 `!Ulucerebro <pregunta>` — Pregúntale a la IA (llama-3.3-70b)
 `!uluimg <descripción>` — Genera una imagen con IA
+`!purge <cantidad>` — Borra una cantidad de mensajes
 `!addtrigger <palabra> <respuesta>` — Crea trigger
 `!addreply <palabra> <respuesta>` — Agrega respuesta
 `!delreply <palabra> <número>` — Elimina respuesta

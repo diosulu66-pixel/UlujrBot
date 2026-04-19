@@ -72,6 +72,7 @@ WHITELIST = [
 | `!delreply <palabra> <número>` | Elimina respuesta por número | `!delreply hola 2` |
 | `!deltrigger <palabra>` | Elimina un trigger completo | `!deltrigger buenas` |
 | `!listtriggers` | Lista todos los triggers | `!listtriggers` |
+| `!purge <cantidad>` | Borra la cantidad de mensajes especificada | `!purge 10` |
 | `!bothelp` | Muestra ayuda | `!bothelp` |
 
 ---
